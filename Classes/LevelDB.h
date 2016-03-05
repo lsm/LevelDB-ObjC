@@ -157,6 +157,11 @@ NSData   * NSDataFromLevelDBKey  (LevelDBKey * key);
 /**
  Same as `[self setObject:forKey:]`
  */
+- (void) setObject:(id)value forKeyedSubscript:(id)key;
+
+/**
+ Same as `[self setObject:forKey:]`
+ */
 - (void) setValue:(id)value forKey:(NSString *)key ;
 
 /**
@@ -177,6 +182,11 @@ NSData   * NSDataFromLevelDBKey  (LevelDBKey * key);
  Apply the operations from a writebatch into the current database
  */
 - (void) applyWritebatch:(LDBWritebatch *)writeBatch;
+
+/**
+ Create new writebatch, apply the operations in block from a writebatch into the current database
+ */
+- (void) performWritebatch:(void (^)(LDBWritebatch *wb))block;
 
 #pragma mark - Getters
 

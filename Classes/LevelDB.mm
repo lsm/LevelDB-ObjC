@@ -146,6 +146,7 @@ LevelDBOptions MakeLevelDBOptions() {
                                                error:&crError];
             if (!success) {
                 NSLog(@"Problem creating parent directory: %@", crError);
+                return nil;
             }
         }
         
@@ -160,6 +161,7 @@ LevelDBOptions MakeLevelDBOptions() {
         
         if(!status.ok()) {
             NSLog(@"Problem creating LevelDB database: %s", status.ToString().c_str());
+            return nil;
         }
         
         self.encoder = ^ NSData *(LevelDBKey *key, id object) {
@@ -213,7 +215,9 @@ LevelDBOptions MakeLevelDBOptions() {
     
     leveldb::Slice k = KeyFromStringOrData(key);
     LevelDBKey lkey = GenericKeyFromSlice(k);
-    leveldb::Slice v = EncodeToSlice(value, &lkey, _encoder);
+
+    NSData *data = _encoder(&lkey, value);
+    leveldb::Slice v = SliceFromData(data);
     
     leveldb::Status status = db->Put(writeOptions, k, v);
     
@@ -222,6 +226,9 @@ LevelDBOptions MakeLevelDBOptions() {
     }
 }
 - (void) setValue:(id)value forKey:(NSString *)key {
+    [self setObject:value forKey:key];
+}
+- (void) setObject:(id)value forKeyedSubscript:(id)key {
     [self setObject:value forKey:key];
 }
 - (void) addEntriesFromDictionary:(NSDictionary *)dictionary {
@@ -242,6 +249,12 @@ LevelDBOptions MakeLevelDBOptions() {
     if(!status.ok()) {
         NSLog(@"Problem applying the write batch in database: %s", status.ToString().c_str());
     }
+}
+
+- (void)performWritebatch:(void (^)(LDBWritebatch *wb))block {
+    LDBWritebatch *wb = [self newWritebatch];
+    block(wb);
+    [wb apply];
 }
 
 #pragma mark - Getters
@@ -284,7 +297,7 @@ LevelDBOptions MakeLevelDBOptions() {
     } else
         return [self objectForKey:key];
 }
-- (id)objectForKeyedSubscript:(id)key {
+- (id) objectForKeyedSubscript:(id)key {
     return [self objectForKey:key withSnapshot:nil];
 }
 
@@ -442,7 +455,7 @@ LevelDBOptions MakeLevelDBOptions() {
                 keyChar = (unsigned char *)startingKeyPtr + i;
                 if (*keyChar < 255) {
                     *keyChar = *keyChar + 1;
-                    iter->Seek(leveldb::Slice((char *)startingKeyPtr, prefixLen));
+                    iter->Seek(leveldb::Slice((char *)startingKeyPtr, startingKey.size()));
                     if (!iter->Valid()) {
                         iter->SeekToLast();
                     }
@@ -455,8 +468,11 @@ LevelDBOptions MakeLevelDBOptions() {
                 return;
             
             lkey = iter->key();
-            if (prefix && memcmp(lkey.data(), prefixPtr, prefixLen) != 0) {
-                iter->Prev();
+            if (startingKey.size() && prefix) {
+                signed int cmp = memcmp(lkey.data(), startingKey.data(), startingKey.size());
+                if (cmp > 0) {
+                    iter->Prev();
+                }
             }
         } else {
             // Otherwise, we start at the provided prefix
